@@ -1,5 +1,5 @@
 import type { Medication, Patient, Encounter, RuleResult, AlertSeverity, DrugEntry } from '../types';
-import { DRUG_DICTIONARY } from '../data/drugDictionary';
+import { lookupDrug } from '../data/drugDictionary';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TEXT NORMALISATION
@@ -31,40 +31,15 @@ function normalizeDx(value: string | undefined | null): string {
 // token length ≥ 4 chars to prevent false positives (e.g. "am" matching
 // amiodarone, amoxicillin, and metformin simultaneously).
 // ─────────────────────────────────────────────────────────────────────────────
-function getDrugEntry(medication: Medication): DrugEntry | null {
-  const generic = normalizeText(medication.generic_name);
-  const brand   = normalizeText(medication.brand_name);
-  const tokens  = [generic, brand].filter(t => t.length > 0);
-  if (tokens.length === 0) return null;
+async function getDrugEntry(medication: Medication): Promise<DrugEntry | null> {
+  const brand   = medication.brand_name?.trim()   || '';
+  const generic = medication.generic_name?.trim()  || '';
+  if (!brand && !generic) return null;
 
-  return (
-    DRUG_DICTIONARY.find(d => {
-      const dGeneric = normalizeText(d.generic_name);
+  const brandResult   = brand   ? await lookupDrug(brand)   : { entry: null };
+  const genericResult = generic ? await lookupDrug(generic) : { entry: null };
 
-      // Tier 1: exact generic name match
-      if (tokens.some(t => t === dGeneric)) return true;
-
-      // Tier 2: exact brand name match
-      if (d.brand_names.some(b => {
-        const nb = normalizeText(b);
-        return tokens.some(t => t === nb);
-      })) return true;
-
-      // Tier 3: composition match — e.g. "ibuprofen+paracetamol" tablet
-      // Minimum length of 4 on BOTH sides prevents "am" / "ol" false hits
-      if (d.compositions?.some(c => {
-        const nc = normalizeText(c);
-        if (nc.length < 4) return false;
-        return tokens.some(t => t.length >= 4 && (nc.includes(t) || t.includes(nc)));
-      })) return true;
-
-      // Tier 4: partial generic (handles "metformin 500mg" → "metformin")
-      // Minimum length of 5 to avoid short-token false positives
-      if (tokens.some(t => t.length >= 5 && dGeneric.includes(t))) return true;
-
-      return false;
-    }) ?? null
-  );
+  return brandResult.entry ?? genericResult.entry ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,12 +47,12 @@ function getDrugEntry(medication: Medication): DrugEntry | null {
 // Builds a Map<medicationId, DrugEntry> once per engine run so all subsequent
 // rule checks are O(1) per medication, not O(m) where m = dictionary size.
 // ─────────────────────────────────────────────────────────────────────────────
-function buildEntryIndex(meds: Medication[]): Map<string, DrugEntry> {
+async function buildEntryIndex(meds: Medication[]): Promise<Map<string, DrugEntry>> {
   const index = new Map<string, DrugEntry>();
-  for (const med of meds) {
-    const entry = getDrugEntry(med);
+  await Promise.all(meds.map(async med => {
+    const entry = await getDrugEntry(med);
     if (entry) index.set(med.id, entry);
-  }
+  }));
   return index;
 }
 
@@ -857,17 +832,17 @@ function runAggregateRules(
 //   7. Aggregate burden rules
 //   8. Deduplicate + sort red → amber → green
 // ─────────────────────────────────────────────────────────────────────────────
-export function runRuleEngine(
+export async function runRuleEngine(
   patient: Patient,
   encounter: Encounter,
   medications: Medication[]
-): RuleResult[] {
+): Promise<RuleResult[]> {
   const active   = medications.filter(m => m.status !== 'discontinued');
   const clinical = encounter.clinical_data ?? {};
   const results: RuleResult[] = [];
 
   // Single dictionary scan — all rule checks below are O(1) per medication
-  const entryIndex = buildEntryIndex(active);
+  const entryIndex = await buildEntryIndex(active);
   const getEntry   = (med: Medication): DrugEntry | null => entryIndex.get(med.id) ?? null;
 
   // Build diagnosis matcher from patient's diagnoses array
@@ -910,10 +885,10 @@ export function runRuleEngine(
 // BUG FIX vs original: uses active medications only (not all medications
 // including discontinued) for the cannotAssess items.
 // ─────────────────────────────────────────────────────────────────────────────
-export function getDataCompletenessIssues(
+export async function getDataCompletenessIssues(
   encounter: Encounter,
   medications: Medication[]
-): { missing: string[]; present: string[]; cannotAssess: string[] } {
+): Promise<{ missing: string[]; present: string[]; cannotAssess: string[] }> {
   const clinical = encounter.clinical_data ?? {};
   const present: string[]      = [];
   const missing: string[]      = [];
@@ -921,7 +896,7 @@ export function getDataCompletenessIssues(
 
   // Discontinued medications do not need active safety checks
   const active     = medications.filter(m => m.status !== 'discontinued');
-  const entryIndex = buildEntryIndex(active);
+  const entryIndex = await buildEntryIndex(active);
   const getEntry   = (med: Medication) => entryIndex.get(med.id) ?? null;
   const nameOf     = (med: Medication) => med.brand_name || med.generic_name || 'Unknown';
 
