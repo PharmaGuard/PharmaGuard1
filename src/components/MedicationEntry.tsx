@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, AlertTriangle, CheckCircle, HelpCircle, Pill } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { logEvent } from '../lib/auditLogger';
@@ -29,7 +29,20 @@ export default function MedicationEntry({
   const [editMed, setEditMed] = useState<Medication | null>(null);
 
   const active = medications.filter(m => m.status !== 'discontinued');
-  const completeness = getDataCompletenessIssues(encounter, medications);
+  const [completeness, setCompleteness] = useState<{
+  present: string[];
+  missing: string[];
+  cannotAssess: string[];
+}>({ present: [], missing: [], cannotAssess: [] });
+
+// Add this useEffect after the state declarations:
+useEffect(() => {
+  async function fetchCompleteness() {
+    const result = await getDataCompletenessIssues(encounter, medications);
+    setCompleteness(result);
+  }
+  fetchCompleteness();
+}, [encounter, medications]);
 
   async function handleSaveMed(data: Partial<Medication>) {
     if (editMed) {
