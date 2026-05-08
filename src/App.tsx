@@ -78,7 +78,7 @@ export default function App() {
     if (!encounter || !patient) return;
 
     await supabase.from('alerts').delete().eq('encounter_id', encounter.id).eq('status', 'active');
-    const results = runRuleEngine(patient, encounter, medications);
+    const results = await runRuleEngine(patient, encounter, medications);
 
     if (results.length > 0) {
       const toInsert = results.map(r => ({
