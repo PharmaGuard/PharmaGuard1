@@ -1,5 +1,5 @@
 import type { Medication, Patient, Encounter, RuleResult, AlertSeverity, DrugEntry } from '../types';
-import { lookupDrug } from '../data/drugDictionary';
+import { DRUG_DICTIONARY } from '../data/drugDictionary';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TEXT NORMALISATION
@@ -32,14 +32,37 @@ function normalizeDx(value: string | undefined | null): string {
 // amiodarone, amoxicillin, and metformin simultaneously).
 // ─────────────────────────────────────────────────────────────────────────────
 async function getDrugEntry(medication: Medication): Promise<DrugEntry | null> {
-  const brand   = medication.brand_name?.trim()   || '';
-  const generic = medication.generic_name?.trim()  || '';
-  if (!brand && !generic) return null;
+  const generic = normalizeText(medication.generic_name);
+  const brand   = normalizeText(medication.brand_name);
+  const tokens  = [generic, brand].filter(t => t.length > 0);
+  if (tokens.length === 0) return null;
 
-  const brandResult   = brand   ? await lookupDrug(brand)   : { entry: null };
-  const genericResult = generic ? await lookupDrug(generic) : { entry: null };
+  return (
+    DRUG_DICTIONARY.find(d => {
+      const dGeneric = normalizeText(d.generic_name);
 
-  return brandResult.entry ?? genericResult.entry ?? null;
+      // Tier 1: exact generic name match
+      if (tokens.some(t => t === dGeneric)) return true;
+
+      // Tier 2: exact brand name match
+      if (d.brand_names.some(b => {
+        const nb = normalizeText(b);
+        return tokens.some(t => t === nb);
+      })) return true;
+
+      // Tier 3: composition match
+      if (d.compositions?.some(c => {
+        const nc = normalizeText(c);
+        if (nc.length < 4) return false;
+        return tokens.some(t => t.length >= 4 && (nc.includes(t) || t.includes(nc)));
+      })) return true;
+
+      // Tier 4: partial generic
+      if (tokens.some(t => t.length >= 5 && dGeneric.includes(t))) return true;
+
+      return false;
+    }) ?? null
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
