@@ -54,7 +54,7 @@ export default function FollowUpReview({
       .eq('encounter_id', encounter.id)
       .eq('status', 'active');
 
-    const results = runRuleEngine(patient, encounter, medications);
+    const results = await runRuleEngine(patient, encounter, medications);
     const newAlerts: Alert[] = [];
 
     if (results.length > 0) {
