@@ -22,15 +22,27 @@ export default function RiskAlertsPanel({
   const [running, setRunning] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const completeness = getDataCompletenessIssues(encounter, medications);
+  const [completeness, setCompleteness] = useState<{
+  present: string[];
+  missing: string[];
+  cannotAssess: string[];
+}>({ present: [], missing: [], cannotAssess: [] });
 
+useEffect(() => {
+  async function fetchCompleteness() {
+    const result = await getDataCompletenessIssues(encounter, medications);
+    setCompleteness(result);
+  }
+  fetchCompleteness();
+}, [encounter, medications]);
+  
   async function runRules() {
     setRunning(true);
 
     // Delete existing active alerts for this encounter
     await supabase.from('alerts').delete().eq('encounter_id', encounter.id).eq('status', 'active');
 
-    const results = runRuleEngine(patient, encounter, medications);
+    const results = await runRuleEngine(patient, encounter, medications);
 
     if (results.length > 0) {
       const toInsert = results.map(r => ({
