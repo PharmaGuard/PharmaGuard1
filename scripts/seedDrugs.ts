@@ -150,7 +150,7 @@ async function main() {
 
     const { error } = await supabase
       .from('drugs')
-      .upsert(chunk, { onConflict: 'generic_name' }); // skip exact duplicates
+      .insert(chunk); // skip exact duplicates
 
     if (error) {
       console.error(`❌ Error on chunk ${i / CHUNK_SIZE + 1}:`, error.message);
