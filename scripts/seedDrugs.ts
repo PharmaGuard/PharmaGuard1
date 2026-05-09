@@ -77,7 +77,7 @@ interface ExcelRow {
 async function main() {
   // 1. Load Excel file
   //    Put your Excel file at: scripts/DataSet_Med.xlsx
-  const filePath = path.resolve(__dirname, 'DataSet_Med.xlsx');
+  const filePath = path.resolve(__dirname, 'DataSet_Med.csv');
   const wb = XLSX.readFile(filePath);
   const ws = wb.Sheets[wb.SheetNames[0]]; // first sheet
   const rows = XLSX.utils.sheet_to_json<ExcelRow>(ws, { defval: '' });
