@@ -8,7 +8,9 @@
  *   npm install xlsx @supabase/supabase-js dotenv
  */
 
-import * as XLSX from 'xlsx';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const XLSX = require('xlsx');
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
